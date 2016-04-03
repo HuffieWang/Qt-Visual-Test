@@ -7,10 +7,6 @@
 uchar runFlag = 0;
 uchar runModeN = 0;
 
-QString auto0P = "  手 动";
-QString auto50P = " 半自动";
-QString auto100P = " 全自动";
-
 //摄像、赛道变量
 uchar imgData[80][80] = {0};
 uchar raceMode[80][80] = {0};
@@ -31,7 +27,6 @@ uchar disData[80][80] = {0};
 const int ovSize = 240;
 unsigned int ovArea = ovSize * ovSize;
 unsigned int *pImage = (unsigned int*)malloc(ovArea*sizeof(unsigned int));
-
 
 Widget::Widget(QWidget *parent) :
     QWidget(parent),
@@ -70,9 +65,9 @@ Widget::Widget(QWidget *parent) :
         }
     }
 
-    ui->comboBox->addItem(auto0P);
-    ui->comboBox->addItem(auto50P);
-    ui->comboBox->addItem(auto100P);
+    ui->comboBox->addItem("  手 动");
+    ui->comboBox->addItem(" 半自动");
+    ui->comboBox->addItem(" 全自动");
 
     timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()) , this, SLOT(updateNomal()));
@@ -225,7 +220,6 @@ void Widget::getImage()
     }
 
     //膨胀操作，消除杂点
-
     for(int i = 1; i < 79; i++)
     {
         for(int j = 1; j < 79; j++)
@@ -244,67 +238,105 @@ void Widget::getImage()
 //自定义循迹算法：disData->循迹算法->更新“绝对方向sita”和“速度step”
 void Widget::doYourAIGO()
 {
-    int cout = 0, sum = 0, lastSum = 0, min = 0;
+    uchar edgeData[80][80] = {0};
 
-    int ans = 0;
-
-    for(int i = 60; i > 0; i--)
+    //边缘提取
+    for(int i = 2; i < 78; i++)
     {
-        cout = 0;
-        sum = 0;
+        for(int j = 2; j < 78; j++)
+        {
+            if(disData[i][j] != disData[i][j+1] ||
+               disData[i][j] != disData[i+1][j])
+            {
+                edgeData[i][j] = 1;
+            }
+        }
+    }
+
+    int len1 = 0, count1 = 0;
+    int len2 = 0, count2 = 0;
+
+    for(int i = 0; i < 80; i++)
+    {
+        len1 = 0; count1 = 0;
+        len2 = 0; count2 = 0;
+        int j = 0;
+        for(j = 0; j < 80; j++)
+        {
+            if(edgeData[i][j] == 1)
+            {
+                count1++;
+                len1 += j;
+            }
+            if(edgeData[j][i] == 1)
+            {
+                count2++;
+                len2 += j;
+            }
+        }
+        if(count1 == 2)
+        {
+            edgeData[i][len1/2] = 2;
+        }
+        if(count2 == 2)
+        {
+            edgeData[len2/2][i] = 2;
+        }
+    }
+
+    int houghData[240][72] = {0};
+    int t = 0, max = 0;
+
+    for(int i = 0; i < 80; i++)
+    {
         for(int j = 0; j < 80; j++)
         {
-            if(disData[i][j] == 1)
+            if(edgeData[i][j] == 1)
             {
-                cout++;
-                sum += j;
+                for(int k = 0; k < 36; k++)
+                {
+                    t = (int)(sin((double)k*3.1416/36)*(double)j  + cos((double)k*3.1416/36)*(double)i);
+                    houghData[120+t][k]++;
+                }
             }
         }
+    }
 
-        if(cout != 0)
+    int r = 0, s = 0;
+    int count = 0;
+    for(int i = 0; i < 240; i++)
+    {
+        for(int j = 0; j < 72; j++)
         {
-            sum/=cout;
-            if(i==60)
-                lastSum = sum;
-
-            if(sum> 0 && sum < 80)
+            if(houghData[i][j] > 20)
             {
-                ans+=sum;
-                disData[i][sum] = 2;
-                min = min + sum - lastSum;
+                count++;
             }
-            lastSum = sum;
+            if(houghData[i][j] > max)
+            {
+                max = houghData[i][j];
+                r = i-120;
+                s = -90+j*5;
+            }
         }
     }
+    qDebug()<<count;
+   // qDebug()<<r <<s;
 
-    if(min > 10)
-    {
-        sita += 18;
-    }
-    else if(min < -10)
-    {
-        sita -= 18;
-    }
-    else if(ans/60 < 35)
-    {
-        double t = cos(sita);
-        xBase += (int)(t*10);
-        t = sin(sita);
-        yBase -= (int)(t*10);
-    }
-    else if(ans/60 > 45)
-    {
-        double t = cos(sita);
-        xBase -= (int)(t*10);
-        t = sin(sita);
-        yBase += (int)(t*10);
-    }
-    else
-    {
-        ;
-    }
+    double k = 0, b = 0;
+    k = -1/tan((double)s*3.14/180);
+    b = 1*(double)r/sin((double)s*3.14/180);
+   // qDebug()<<k <<b;
 
+    for(int i = 0; i < 80; i++)
+    {
+        for(int j = 0; j < 80; j++)
+        {
+            disData[i][j] = edgeData[i][j];
+        }
+    }
 }
+
 
 //正常飞行：从 “base坐标” 向 “sita角度” 飞行 “step距离”
 void Widget::goNomal()
