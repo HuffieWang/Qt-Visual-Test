@@ -7,17 +7,18 @@
 uchar runFlag = 0;
 uchar runModeN = 0;
 
-QString auto0P = "  手 动";
-QString auto50P = " 半自动";
-QString auto100P = " 全自动";
-
 //摄像、赛道变量
 uchar imgData[80][80] = {0};
 uchar raceMode[80][80] = {0};
 uchar raceData[800][800] = {0};
 
+//识别算法变量
+const int upCode[5][2] = {{-1,0}, {-1,-1}, {-1,1}, {0,-1}, {0,1}};
+
+int findCode[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
+
 //运动变量
-int xBase = 300, yBase = 300;
+int xBase = 380, yBase = 335;
 double xFix = 0.00, yFix = 0.00;
 double step = 0.00;
 double sita = 0.00;
@@ -32,14 +33,14 @@ const int ovSize = 240;
 unsigned int ovArea = ovSize * ovSize;
 unsigned int *pImage = (unsigned int*)malloc(ovArea*sizeof(unsigned int));
 
-
 Widget::Widget(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::Widget)
 {
     ui->setupUi(this);
 
-    //设计赛道
+    //赛道1
+    /*
     for (int i = 30; i < 50; ++i)
     {
         raceMode[i][30] = 1;
@@ -48,6 +49,27 @@ Widget::Widget(QWidget *parent) :
         raceMode[49][i] = 1;
 
     }
+    */
+    //赛道2
+    for(int i = 0; i < 10; i++)
+    {
+        raceMode[40-5][61-15+i] = 1;
+        raceMode[40+5][61-15+i] = 1;
+
+        raceMode[40-5-i][40-5] = 1;
+        raceMode[40-5-i][40+5] = 1;
+        raceMode[40+5+i][40-5] = 1;
+        raceMode[40+5+i][40+5] = 1;
+    }
+
+    for(int i = 0; i < 11; i++)
+    {
+        raceMode[35+i][35] = 1;
+        raceMode[35+i][55] = 1;
+        raceMode[25][35+i] = 1;
+        raceMode[55][35+i] = 1;
+    }
+
     for(int i = 10; i < 70; i++)
     {
         raceMode[i][10] = 1;
@@ -55,6 +77,8 @@ Widget::Widget(QWidget *parent) :
         raceMode[10][i] = 1;
         raceMode[69][i] = 1;
     }
+
+
     //生成赛道
     for(int i = 0; i < 80; i++)
     {
@@ -70,9 +94,9 @@ Widget::Widget(QWidget *parent) :
         }
     }
 
-    ui->comboBox->addItem(auto0P);
-    ui->comboBox->addItem(auto50P);
-    ui->comboBox->addItem(auto100P);
+    ui->comboBox->addItem("  手 动");
+    ui->comboBox->addItem(" 半自动");
+    ui->comboBox->addItem(" 全自动");
 
     timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()) , this, SLOT(updateNomal()));
@@ -120,7 +144,7 @@ void Widget::on_pushButton_clicked()
         runFlag = 0;
         timer->stop();
         ui->label->clear();
-        xBase = 300; yBase = 300;
+        xBase = 380; yBase = 335;
         sita = 0.00;
         step = 0.00;
         xFix = 0.00; yFix = 0.00;
@@ -225,7 +249,6 @@ void Widget::getImage()
     }
 
     //膨胀操作，消除杂点
-
     for(int i = 1; i < 79; i++)
     {
         for(int j = 1; j < 79; j++)
@@ -244,66 +267,82 @@ void Widget::getImage()
 //自定义循迹算法：disData->循迹算法->更新“绝对方向sita”和“速度step”
 void Widget::doYourAIGO()
 {
-    int cout = 0, sum = 0, lastSum = 0, min = 0;
+    uchar edgeData[80][80] = {0};
+    int i = 0, j = 0;
 
-    int ans = 0;
 
-    for(int i = 60; i > 0; i--)
+    //边缘提取
+    for(i = 2; i < 78; i++)
     {
-        cout = 0;
-        sum = 0;
-        for(int j = 0; j < 80; j++)
+        for(j = 2; j < 78; j++)
         {
-            if(disData[i][j] == 1)
+            if(disData[i][j] != disData[i][j+1] ||
+               disData[i][j] != disData[i+1][j])
             {
-                cout++;
-                sum += j;
+                edgeData[i][j] = 1;
+            }
+        }
+    }
+
+    //链码寻找瞄点
+    int flag = 1, xStart = 40, yStart = 40;
+    for(i = 78; (i > 2)&&(flag); i--)
+    {
+        for(j = 2; (j < 78)&&(flag); j++)
+        {
+            if(edgeData[i][j] == 1)
+            {
+                edgeData[i][j] = 230;
+                flag = 0;
+                xStart = i;
+                yStart = j;
+            }
+        }
+    }
+    int n = 0, last = 0, now = 0;
+    while(n < 160)
+    {
+        for(i = 0; i < 8; i++)
+        {
+            now = last + i;
+
+            if(now < 0)
+                now += 8;
+            if(now > 7)
+                now -= 8;
+
+            if(edgeData[xStart+findCode[now][0]][yStart+findCode[now][1]] == 1)
+            {
+                xStart = xStart + findCode[now][0];
+                yStart = yStart + findCode[now][1];
+                edgeData[xStart][yStart] = 2;
+                break;
             }
         }
 
-        if(cout != 0)
-        {
-            sum/=cout;
-            if(i==60)
-                lastSum = sum;
+        last = now - 2;
+        n++;
+    }
 
-            if(sum> 0 && sum < 80)
-            {
-                ans+=sum;
-                disData[i][sum] = 2;
-                min = min + sum - lastSum;
-            }
-            lastSum = sum;
+    //瞄点用红色叉标出
+    edgeData[xStart][yStart] = 250;
+    edgeData[xStart-1][yStart-1] = 250;
+    edgeData[xStart-1][yStart+1] = 250;
+    edgeData[xStart+1][yStart-1] = 250;
+    edgeData[xStart+1][yStart+1] = 250;
+
+    //根据瞄点设定飞行角度
+    double tt = atan((double)(yStart-40)/(double)(70-xStart))/3.1416*180;
+    sita += tt;
+    ui->wEdit->setText(QString::number(tt, 10, 1));
+
+    for(i = 0; i < 80; i++)
+    {
+        for(j = 0; j < 80; j++)
+        {
+            disData[i][j] = edgeData[i][j];
         }
     }
-
-    if(min > 10)
-    {
-        sita += 18;
-    }
-    else if(min < -10)
-    {
-        sita -= 18;
-    }
-    else if(ans/60 < 35)
-    {
-        double t = cos(sita);
-        xBase += (int)(t*10);
-        t = sin(sita);
-        yBase -= (int)(t*10);
-    }
-    else if(ans/60 > 45)
-    {
-        double t = cos(sita);
-        xBase -= (int)(t*10);
-        t = sin(sita);
-        yBase += (int)(t*10);
-    }
-    else
-    {
-        ;
-    }
-
 }
 
 //正常飞行：从 “base坐标” 向 “sita角度” 飞行 “step距离”
@@ -349,6 +388,37 @@ void Widget::disImage()
     {
         for(int k = 0; k < 3; ++k)
         {
+            /*
+            for (int j = 0; j < 80; ++j)
+            {
+                pa = (uchar *)(pImage+n);
+                pb = (uchar *)(pImage+n+1);
+                pc = (uchar *)(pImage+n+2);
+
+                pImage[n] = 0;pImage[n+1] = 0;pImage[n+2] = 0;
+                if(raceMode[i][j] == 1)
+                {
+                    pa[0] = 255; pa[1] = 255; pa[2] = 255;
+                    pb[0] = 255; pb[1] = 255; pb[2] = 255;
+                    pc[0] = 255; pc[1] = 255; pc[2] = 255;
+                }
+                else if(raceMode[i][j] == 2)
+                {
+                    pa[0] = 0; pa[1] = 255; pa[2] = 0;
+                    pb[0] = 0; pb[1] = 255; pb[2] = 0;
+                    pc[0] = 0; pc[1] = 255; pc[2] = 0;
+                }
+                else
+                {
+                    pa[0] = 0; pa[1] = 0; pa[2] = 0;
+                    pb[0] = 0; pb[1] = 0; pb[2] = 0;
+                    pc[0] = 0; pc[1] = 0; pc[2] = 0;
+                }
+                n+=3;
+            }
+
+            */
+
             for (int j = 0; j < 80; ++j)
             {
                 pa = (uchar *)(pImage+n);
@@ -370,12 +440,14 @@ void Widget::disImage()
                 }
                 else
                 {
-                    pa[0] = 0; pa[1] = 0; pa[2] = 0;
-                    pb[0] = 0; pb[1] = 0; pb[2] = 0;
-                    pc[0] = 0; pc[1] = 0; pc[2] = 0;
+                    pa[0] = 0; pa[1] = 0; pa[2] = disData[i][j];
+                    pb[0] = 0; pb[1] = 0; pb[2] = disData[i][j];
+                    pc[0] = 0; pc[1] = 0; pc[2] = disData[i][j];
                 }
                 n+=3;
             }
+
+
         }
     }
 
