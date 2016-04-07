@@ -4,34 +4,26 @@
 #include <QDebug>
 #include "math.h"
 
-uchar runFlag = 0;
-uchar runModeN = 0;
+static uchar runFlag, runMode;
 
-//摄像、赛道变量
-uchar imgData[80][80] = {0};
-uchar raceMode[80][80] = {0};
-uchar raceData[800][800] = {0};
-
-//识别算法变量
-const int upCode[5][2] = {{-1,0}, {-1,-1}, {-1,1}, {0,-1}, {0,1}};
-
-int findCode[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
+//赛道变量
+#define RACE2
+static uchar raceData[800][800];
 
 //运动变量
-int xBase = 380, yBase = 335;
-double xFix = 0.00, yFix = 0.00;
-double step = 0.00;
-double sita = 0.00;
-double vSita = 0.00;
-double sinSita = 0.00, cosSita = 0.00;
-
-//图片结果变量
-uchar disData[80][80] = {0};
+const int xBegin = 380, yBegin = 335;
+static int xBase, yBase;
+static double xFix, yFix;
+static double sita;
+static double step, vYaw;
 
 //图片显示中间变量
-const int ovSize = 240;
-unsigned int ovArea = ovSize * ovSize;
-unsigned int *pImage = (unsigned int*)malloc(ovArea*sizeof(unsigned int));
+const unsigned int ovSize = 240;
+static unsigned int ovArea = ovSize * ovSize;
+static unsigned int *pImage = (unsigned int*)malloc(ovArea*sizeof(unsigned int));
+
+//图片结果变量
+ static uchar disData[80][80];
 
 Widget::Widget(QWidget *parent) :
     QWidget(parent),
@@ -39,8 +31,8 @@ Widget::Widget(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    //赛道1
-    /*
+    uchar raceMode[80][80] = {0};
+    #ifdef RACE1
     for (int i = 30; i < 50; ++i)
     {
         raceMode[i][30] = 1;
@@ -49,8 +41,8 @@ Widget::Widget(QWidget *parent) :
         raceMode[49][i] = 1;
 
     }
-    */
-    //赛道2
+    #endif
+    #ifdef RACE2
     for(int i = 0; i < 10; i++)
     {
         raceMode[40-5][61-15+i] = 1;
@@ -61,7 +53,6 @@ Widget::Widget(QWidget *parent) :
         raceMode[40+5+i][40-5] = 1;
         raceMode[40+5+i][40+5] = 1;
     }
-
     for(int i = 0; i < 11; i++)
     {
         raceMode[35+i][35] = 1;
@@ -69,7 +60,7 @@ Widget::Widget(QWidget *parent) :
         raceMode[25][35+i] = 1;
         raceMode[55][35+i] = 1;
     }
-
+    #endif
     for(int i = 10; i < 70; i++)
     {
         raceMode[i][10] = 1;
@@ -77,7 +68,6 @@ Widget::Widget(QWidget *parent) :
         raceMode[10][i] = 1;
         raceMode[69][i] = 1;
     }
-
 
     //生成赛道
     for(int i = 0; i < 80; i++)
@@ -120,6 +110,7 @@ Widget::~Widget()
 //停止：“base坐标”回到原点，“绝对方向sita” 归零，“速度step”归零
 void Widget::on_pushButton_clicked()
 {
+    xBase = xBegin; yBase = yBegin;
     if(runFlag == 0)
     {
         runFlag = 1;
@@ -128,13 +119,22 @@ void Widget::on_pushButton_clicked()
         {
             ui->pushButton_UP->setEnabled(true);
             ui->pushButton_DN->setEnabled(true);
-            ui->pushButton_L->setEnabled(true);
-            ui->pushButton_R->setEnabled(true);
+            if(ui->comboBox->currentIndex() != 1)
+            {
+                ui->wEdit->setText("18");
+                ui->pushButton_L->setEnabled(true);
+                ui->pushButton_R->setEnabled(true);
+            }
         }
-        if(ui->comboBox->currentIndex() != 0 )
-            runModeN = 1;
         else
-            runModeN = 0;
+        {
+            ui->vEdit->setText("6");
+        }
+
+        if(ui->comboBox->currentIndex() != 0 )
+            runMode = 1;
+        else
+            runMode = 0;
 
         ui->comboBox->setDisabled(true);
         timer->start(200);
@@ -144,7 +144,6 @@ void Widget::on_pushButton_clicked()
         runFlag = 0;
         timer->stop();
         ui->label->clear();
-        xBase = 380; yBase = 335;
         sita = 0.00;
         step = 0.00;
         xFix = 0.00; yFix = 0.00;
@@ -154,7 +153,8 @@ void Widget::on_pushButton_clicked()
         ui->pushButton_L->setEnabled(false);
         ui->pushButton_R->setEnabled(false);
         ui->vEdit->setText("0");
-        ui->wEdit->setText("18");
+        ui->wEdit->setText("0");
+        ui->sEdit->setText("0");
         ui->comboBox->setDisabled(false);
     }
 }
@@ -184,22 +184,22 @@ void Widget::on_pushButton_DN_clicked()
 //左转：减小“绝对方向sita”
 void Widget::on_pushButton_R_clicked()
 {
-    vSita = ui->wEdit->text().toDouble();
-    sita -= vSita;
+    vYaw = ui->wEdit->text().toDouble();
+    sita -= vYaw;
 }
 
 //右转：增大“绝对方向sita”
 void Widget::on_pushButton_L_clicked()
 {
-    vSita = ui->wEdit->text().toDouble();
-    sita += vSita;
+    vYaw = ui->wEdit->text().toDouble();
+    sita += vYaw;
 }
 
 //正常运行：每0.1s动作一次
 void Widget::updateNomal()
 {
     getImage();
-    if(runModeN != 0)
+    if(runMode != 0)
         doYourAIGO();
     goNomal();
     disImage();
@@ -209,6 +209,8 @@ void Widget::updateNomal()
 void Widget::getImage()
 {
     uchar tempData[180][180] = {0};
+    uchar imgData[80][80] = {0};
+    double sinSita = 0.00, cosSita = 0.00;
     double xt = 0, yt = 0;
     int xi = 0, yi = 0;
 
@@ -270,7 +272,6 @@ void Widget::doYourAIGO()
     uchar edgeData[80][80] = {0};
     int i = 0, j = 0;
 
-
     //边缘提取
     for(i = 2; i < 78; i++)
     {
@@ -300,6 +301,7 @@ void Widget::doYourAIGO()
         }
     }
     int n = 0, last = 0, now = 0;
+    int findCode[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
     while(n < 160)
     {
         for(i = 0; i < 8; i++)
@@ -340,6 +342,7 @@ void Widget::doYourAIGO()
     {
         for(j = 0; j < 80; j++)
         {
+            if(edgeData[i][j] != 0)
             disData[i][j] = edgeData[i][j];
         }
     }
@@ -350,7 +353,21 @@ void Widget::goNomal()
 {
     int temp = 0;
     double ans = 0.00;
+    double sinSita = 0.00, cosSita = 0.00;
+    sinSita = sin(3.1416 * sita / 180.00);
+    cosSita = cos(3.1416 * sita / 180.00);
+
     step = ui->vEdit->text().toInt();
+
+    if(sita >= 360)
+    {
+        sita -= 360;
+    }
+    else if(sita < 0)
+    {
+        sita += 360;
+    }
+    ui->sEdit->setText(QString::number(sita, 10, 1));
 
     ans = cosSita*step + xFix;
     temp = (int)(ans);
@@ -388,37 +405,6 @@ void Widget::disImage()
     {
         for(int k = 0; k < 3; ++k)
         {
-            /*
-            for (int j = 0; j < 80; ++j)
-            {
-                pa = (uchar *)(pImage+n);
-                pb = (uchar *)(pImage+n+1);
-                pc = (uchar *)(pImage+n+2);
-
-                pImage[n] = 0;pImage[n+1] = 0;pImage[n+2] = 0;
-                if(raceMode[i][j] == 1)
-                {
-                    pa[0] = 255; pa[1] = 255; pa[2] = 255;
-                    pb[0] = 255; pb[1] = 255; pb[2] = 255;
-                    pc[0] = 255; pc[1] = 255; pc[2] = 255;
-                }
-                else if(raceMode[i][j] == 2)
-                {
-                    pa[0] = 0; pa[1] = 255; pa[2] = 0;
-                    pb[0] = 0; pb[1] = 255; pb[2] = 0;
-                    pc[0] = 0; pc[1] = 255; pc[2] = 0;
-                }
-                else
-                {
-                    pa[0] = 0; pa[1] = 0; pa[2] = 0;
-                    pb[0] = 0; pb[1] = 0; pb[2] = 0;
-                    pc[0] = 0; pc[1] = 0; pc[2] = 0;
-                }
-                n+=3;
-            }
-
-            */
-
             for (int j = 0; j < 80; ++j)
             {
                 pa = (uchar *)(pImage+n);
@@ -446,8 +432,6 @@ void Widget::disImage()
                 }
                 n+=3;
             }
-
-
         }
     }
 

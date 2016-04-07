@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
     Widget w;
     w.setWindowTitle("湖南工学院地面站");
     w.setWindowIcon(QIcon(QPixmap(":/hnit.ico")));
-    w.setFixedSize(250, 354);
+    w.setFixedSize(240, 340);
     w.show();
 
     return a.exec();
