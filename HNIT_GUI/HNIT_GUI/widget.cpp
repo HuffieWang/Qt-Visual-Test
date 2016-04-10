@@ -8,7 +8,7 @@ static uchar runFlag, runMode;
 
 //赛道变量
 #define RACE2
-static uchar raceData[800][800];
+static uchar race[800][800];
 
 //运动变量
 const int xBegin = 380, yBegin = 335;
@@ -47,7 +47,6 @@ Widget::Widget(QWidget *parent) :
     {
         raceMode[40-5][61-15+i] = 1;
         raceMode[40+5][61-15+i] = 1;
-
         raceMode[40-5-i][40-5] = 1;
         raceMode[40-5-i][40+5] = 1;
         raceMode[40+5+i][40-5] = 1;
@@ -78,7 +77,7 @@ Widget::Widget(QWidget *parent) :
             {
                 for(int l = j*10; l < (j+1)*10; l++)
                 {
-                    raceData[k][l] = raceMode[i][j];
+                    race[k][l] = raceMode[i][j];
                 }
             }
         }
@@ -88,9 +87,6 @@ Widget::Widget(QWidget *parent) :
     ui->comboBox->addItem(" 半自动");
     ui->comboBox->addItem(" 全自动");
 
-    timer = new QTimer(this);
-    connect(timer, SIGNAL(timeout()) , this, SLOT(updateNomal()));
-
     ui->vEdit->setValidator(new QIntValidator(0, 99, this));
     ui->wEdit->setValidator(new QIntValidator(0, 90, this));
 
@@ -99,6 +95,9 @@ Widget::Widget(QWidget *parent) :
     ui->pushButton_DN->setEnabled(false);
     ui->pushButton_L->setEnabled(false);
     ui->pushButton_R->setEnabled(false);
+
+    timer = new QTimer(this);
+    connect(timer, SIGNAL(timeout()) , this, SLOT(updateNomal()));
 }
 
 Widget::~Widget()
@@ -199,8 +198,7 @@ void Widget::on_pushButton_L_clicked()
 void Widget::updateNomal()
 {
     getImage();
-    if(runMode != 0)
-        doYourAIGO();
+    doYourAIGO();
     goNomal();
     disImage();
 }
@@ -236,8 +234,8 @@ void Widget::getImage()
             else
                 yi = (int)(yt - 0.5);
 
-            //tempData中心坐标修正90, raceData修正40
-            tempData[xi + 90][yi + 90] = raceData[i+xBase-40][j+yBase-40];
+            //tempData中心坐标修正90, race修正40
+            tempData[xi + 90][yi + 90] = race[i+xBase-40][j+yBase-40];
         }
     }
 
@@ -246,6 +244,7 @@ void Widget::getImage()
     {
         for(int j = 0; j < 80; j++)
         {
+            disData[i][j] = 0;
             imgData[i][j] = tempData[i+50][j+50];
         }
     }
@@ -269,7 +268,7 @@ void Widget::getImage()
 //自定义循迹算法：disData->循迹算法->更新“绝对方向sita”和“速度step”
 void Widget::doYourAIGO()
 {
-    uchar edgeData[80][80] = {0};
+    uchar edge[80][80] = {0};
     int i = 0, j = 0;
 
     //边缘提取
@@ -280,28 +279,48 @@ void Widget::doYourAIGO()
             if(disData[i][j] != disData[i][j+1] ||
                disData[i][j] != disData[i+1][j])
             {
-                edgeData[i][j] = 1;
+                edge[i][j] = 3;
             }
         }
     }
 
-    //链码寻找瞄点
-    int flag = 1, xStart = 40, yStart = 40;
-    for(i = 78; (i > 2)&&(flag); i--)
+    //寻找链码搜寻的起始点
+    int flag = 0, len = 0, xStart = 40, yStart = 40;
+    for(i = 77; i > 1; i--)
     {
-        for(j = 2; (j < 78)&&(flag); j++)
+        flag = 0;
+
+        for(j = 77; j > 1; j--)
         {
-            if(edgeData[i][j] == 1)
+            if(edge[i][j] == 3)
             {
-                edgeData[i][j] = 230;
-                flag = 0;
-                xStart = i;
-                yStart = j;
+                flag++;
+                len = j;
+                break;
             }
         }
+        for(j = 2; j < 78; j++)
+        {
+            if(edge[i][j] == 3)
+            {
+                flag++;
+                len -= j;
+                break;
+            }
+        }
+
+        if(flag == 2 && len > 3)
+        {
+            xStart = i;
+            yStart = j;
+            edge[i][j] = 230;
+            break;
+        }
     }
+
+    //链码搜寻瞄点
     int n = 0, last = 0, now = 0;
-    int findCode[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
+    int find[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
     while(n < 160)
     {
         for(i = 0; i < 8; i++)
@@ -313,37 +332,39 @@ void Widget::doYourAIGO()
             if(now > 7)
                 now -= 8;
 
-            if(edgeData[xStart+findCode[now][0]][yStart+findCode[now][1]] == 1)
+            if(edge[xStart+find[now][0]][yStart+find[now][1]] == 3)
             {
-                xStart = xStart + findCode[now][0];
-                yStart = yStart + findCode[now][1];
-                edgeData[xStart][yStart] = 2;
+                xStart = xStart + find[now][0];
+                yStart = yStart + find[now][1];
+                edge[xStart][yStart] = 2;
                 break;
             }
         }
-
         last = now - 2;
         n++;
     }
 
     //瞄点用红色叉标出
-    edgeData[xStart][yStart] = 250;
-    edgeData[xStart-1][yStart-1] = 250;
-    edgeData[xStart-1][yStart+1] = 250;
-    edgeData[xStart+1][yStart-1] = 250;
-    edgeData[xStart+1][yStart+1] = 250;
+    edge[xStart][yStart] = 250;
+    edge[xStart-1][yStart-1] = 250;
+    edge[xStart-1][yStart+1] = 250;
+    edge[xStart+1][yStart-1] = 250;
+    edge[xStart+1][yStart+1] = 250;
 
     //根据瞄点设定飞行角度
-    double tt = atan((double)(yStart-40)/(double)(70-xStart))/3.1416*180;
-    sita += tt;
-    ui->wEdit->setText(QString::number(tt, 10, 1));
+    if(runMode != 0)
+    {
+        double tt = atan((double)(yStart-40)/(double)(70-xStart))/3.1416*180;
+        sita += tt;
+        ui->wEdit->setText(QString::number(tt, 10, 1));
+    }
 
     for(i = 0; i < 80; i++)
     {
         for(j = 0; j < 80; j++)
         {
-            if(edgeData[i][j] != 0)
-            disData[i][j] = edgeData[i][j];
+            if(edge[i][j] != 0)
+                disData[i][j] = edge[i][j];
         }
     }
 }
@@ -424,13 +445,19 @@ void Widget::disImage()
                     pb[0] = 0; pb[1] = 255; pb[2] = 0;
                     pc[0] = 0; pc[1] = 255; pc[2] = 0;
                 }
+                else if(disData[i][j] == 3)
+                {
+                    pa[0] = 0; pa[1] = 255; pa[2] = 255;
+                    pb[0] = 0; pb[1] = 255; pb[2] = 255;
+                    pc[0] = 0; pc[1] = 255; pc[2] = 255;
+                }
                 else
                 {
                     pa[0] = 0; pa[1] = 0; pa[2] = disData[i][j];
                     pb[0] = 0; pb[1] = 0; pb[2] = disData[i][j];
                     pc[0] = 0; pc[1] = 0; pc[2] = disData[i][j];
                 }
-                n+=3;
+                n+=3;   
             }
         }
     }
