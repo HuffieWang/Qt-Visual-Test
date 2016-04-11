@@ -179,6 +179,32 @@
     <string>0</string>
    </property>
   </widget>
+  <widget class="QPushButton" name="pushButton_EL">
+   <property name="geometry">
+    <rect>
+     <x>95</x>
+     <y>280</y>
+     <width>41</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>靠左</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pushButton_ER">
+   <property name="geometry">
+    <rect>
+     <x>195</x>
+     <y>280</y>
+     <width>41</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>靠右</string>
+   </property>
+  </widget>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <resources/>

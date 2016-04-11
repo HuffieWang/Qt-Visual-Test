@@ -11,11 +11,13 @@ static uchar runFlag, runMode;
 static uchar race[800][800];
 
 //运动变量
-const int xBegin = 380, yBegin = 335;
+const int xBegin = 350, yBegin = 335;
 static int xBase, yBase;
 static double xFix, yFix;
 static double sita;
 static double step, vYaw;
+
+static int turn = 0;
 
 //图片显示中间变量
 const unsigned int ovSize = 240;
@@ -95,7 +97,8 @@ Widget::Widget(QWidget *parent) :
     ui->pushButton_DN->setEnabled(false);
     ui->pushButton_L->setEnabled(false);
     ui->pushButton_R->setEnabled(false);
-
+    ui->pushButton_EL->setEnabled(false);
+    ui->pushButton_ER->setEnabled(false);
     timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()) , this, SLOT(updateNomal()));
 }
@@ -118,6 +121,8 @@ void Widget::on_pushButton_clicked()
         {
             ui->pushButton_UP->setEnabled(true);
             ui->pushButton_DN->setEnabled(true);
+            ui->pushButton_EL->setEnabled(false);
+            ui->pushButton_ER->setEnabled(true);
             if(ui->comboBox->currentIndex() != 1)
             {
                 ui->wEdit->setText("18");
@@ -146,11 +151,14 @@ void Widget::on_pushButton_clicked()
         sita = 0.00;
         step = 0.00;
         xFix = 0.00; yFix = 0.00;
+        turn = 0;
         ui->pushButton->setText("启动");
         ui->pushButton_UP->setEnabled(false);
         ui->pushButton_DN->setEnabled(false);
         ui->pushButton_L->setEnabled(false);
         ui->pushButton_R->setEnabled(false);
+        ui->pushButton_EL->setEnabled(false);
+        ui->pushButton_ER->setEnabled(false);
         ui->vEdit->setText("0");
         ui->wEdit->setText("0");
         ui->sEdit->setText("0");
@@ -271,7 +279,7 @@ void Widget::doYourAIGO()
     uchar edge[80][80] = {0};
     int i = 0, j = 0;
 
-    //边缘提取
+    // ------------------------------- 边缘提取 ---------------------------------------
     for(i = 2; i < 78; i++)
     {
         for(j = 2; j < 78; j++)
@@ -284,8 +292,10 @@ void Widget::doYourAIGO()
         }
     }
 
-    //寻找链码搜寻的起始点
-    int flag = 0, len = 0, xStart = 40, yStart = 40;
+    // ------------------------------ 寻找链码起点 --------------------------------------
+    int flag = 0;
+    int leftBeginX = 40, leftBeginY = 40, rightBeginX = 40, rightBeginY = 40;
+
     for(i = 77; i > 1; i--)
     {
         flag = 0;
@@ -295,7 +305,7 @@ void Widget::doYourAIGO()
             if(edge[i][j] == 3)
             {
                 flag++;
-                len = j;
+                rightBeginY = j;
                 break;
             }
         }
@@ -304,21 +314,22 @@ void Widget::doYourAIGO()
             if(edge[i][j] == 3)
             {
                 flag++;
-                len -= j;
+                leftBeginY = j;
                 break;
             }
         }
-
-        if(flag == 2 && len > 3)
+        if(flag == 2 && (rightBeginY-leftBeginY) > 4)
         {
-            xStart = i;
-            yStart = j;
-            edge[i][j] = 230;
+            leftBeginX = i;
+            rightBeginX = i;
             break;
         }
     }
+    edge[leftBeginX][leftBeginY] = 230;
+    int rightX = rightBeginX, rightY = rightBeginY;
+    int leftX = leftBeginX, leftY = leftBeginY;
 
-    //链码搜寻瞄点
+    // ------------------------------- Left链码 ---------------------------------------
     int n = 0, last = 0, now = 0;
     int find[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
     while(n < 160)
@@ -332,33 +343,71 @@ void Widget::doYourAIGO()
             if(now > 7)
                 now -= 8;
 
-            if(edge[xStart+find[now][0]][yStart+find[now][1]] == 3)
+            if(edge[leftX+find[now][0]][leftY+find[now][1]] == 3)
             {
-                xStart = xStart + find[now][0];
-                yStart = yStart + find[now][1];
-                edge[xStart][yStart] = 2;
+                leftX = leftX + find[now][0];
+                leftY = leftY + find[now][1];
+                edge[leftX][leftY] = 2;
                 break;
             }
         }
         last = now - 2;
         n++;
     }
+    edge[leftX][leftY] = 250;
 
-    //瞄点用红色叉标出
-    edge[xStart][yStart] = 250;
-    edge[xStart-1][yStart-1] = 250;
-    edge[xStart-1][yStart+1] = 250;
-    edge[xStart+1][yStart-1] = 250;
-    edge[xStart+1][yStart+1] = 250;
-
-    //根据瞄点设定飞行角度
-    if(runMode != 0)
+    // ------------------------------- Right链码 ---------------------------------------
+    n = 0, last = 0, now = 0;
+    while(n < 160)
     {
-        double tt = atan((double)(yStart-40)/(double)(70-xStart))/3.1416*180;
+        for(i = 0; i < 8; i++)
+        {
+            now = last + i;
+
+            if(now < 0)
+                now += 8;
+            if(now > 7)
+                now -= 8;
+            if(edge[rightX+find[now][0]][rightY+find[now][1]] == 3)
+            {
+                rightX = rightX + find[now][0];
+                rightY = rightY + find[now][1];
+                edge[rightX][rightY] = 2;
+                break;
+            }
+        }
+        last = now - 2;
+        n++;
+    }
+    edge[rightX][rightY] = 250;
+
+    //have: rightX rightY leftX leftY and their begin.
+    //set : sita step
+    //attention : start - end
+    //--------------------------------  线路决策 ----------------------------------------
+    //目前用按钮进行决策
+
+    //--------------------------------  姿态调整  ---------------------------------------
+    double tt = 0.0;
+    if(turn)
+    {
+        edge[rightX-1][rightY-1] = 250; edge[rightX-1][rightY+1] = 250;
+        edge[rightX+1][rightY-1] = 250; edge[rightX+1][rightY+1] = 250;
+        tt= atan((double)(rightY-40)/(double)(70-rightX))/3.1416*180;
+    }
+    else
+    {
+        edge[leftX-1][leftY-1] = 250; edge[leftX-1][leftY+1] = 250;
+        edge[leftX+1][leftY-1] = 250; edge[leftX+1][leftY+1] = 250;
+        tt= atan((double)(leftY-40)/(double)(70-leftX))/3.1416*180;
+    }
+    if(runMode != 0)
+    {       
         sita += tt;
         ui->wEdit->setText(QString::number(tt, 10, 1));
     }
 
+    //------------------------------  图像信息加注  ---------------------------------------
     for(i = 0; i < 80; i++)
     {
         for(j = 0; j < 80; j++)
@@ -468,3 +517,16 @@ void Widget::disImage()
     ui->label->setPixmap(QPixmap::fromImage(image));
 }
 
+void Widget::on_pushButton_EL_clicked()
+{
+    turn = 0;
+    ui->pushButton_EL->setEnabled(false);
+    ui->pushButton_ER->setEnabled(true);
+}
+
+void Widget::on_pushButton_ER_clicked()
+{
+    turn = 1;
+    ui->pushButton_EL->setEnabled(true);
+    ui->pushButton_ER->setEnabled(false);
+}

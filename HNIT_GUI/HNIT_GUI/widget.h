@@ -39,6 +39,10 @@ private slots:
 
 //    void on_comboBox_currentIndexChanged(int index);
 
+    void on_pushButton_EL_clicked();
+
+    void on_pushButton_ER_clicked();
+
 private:
     Ui::Widget *ui;
     QTimer *timer;
