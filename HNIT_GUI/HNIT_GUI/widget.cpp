@@ -6,12 +6,14 @@
 
 static uchar runFlag, runMode;
 
+//attention: 十字路口链码起点有BUG
 //赛道变量
-#define RACE2
+#define RACE1
 static uchar race[800][800];
 
 //运动变量
-const int xBegin = 350, yBegin = 335;
+//const int xBegin = 350, yBegin = 335;
+const int xBegin = 500, yBegin = 180;
 static int xBase, yBase;
 static double xFix, yFix;
 static double sita;
@@ -35,13 +37,13 @@ Widget::Widget(QWidget *parent) :
 
     uchar raceMode[80][80] = {0};
     #ifdef RACE1
-    for (int i = 30; i < 50; ++i)
+    for (int i = 20; i < 60; ++i)
     {
-        raceMode[i][30] = 1;
-        raceMode[i][49] = 1;
-        raceMode[30][i] = 1;
-        raceMode[49][i] = 1;
-
+        raceMode[i][20] = 1;
+        raceMode[i][59] = 1;
+        raceMode[20][i] = 1;
+        raceMode[35][i] = 1;
+        raceMode[59][i] = 1;
     }
     #endif
     #ifdef RACE2
@@ -276,10 +278,10 @@ void Widget::getImage()
 //自定义循迹算法：disData->循迹算法->更新“绝对方向sita”和“速度step”
 void Widget::doYourAIGO()
 {
-    uchar edge[80][80] = {0};
     int i = 0, j = 0;
 
     // ------------------------------- 边缘提取 ---------------------------------------
+    uchar edge[80][80] = {0};
     for(i = 2; i < 78; i++)
     {
         for(j = 2; j < 78; j++)
@@ -295,11 +297,9 @@ void Widget::doYourAIGO()
     // ------------------------------ 寻找链码起点 --------------------------------------
     int flag = 0;
     int leftBeginX = 40, leftBeginY = 40, rightBeginX = 40, rightBeginY = 40;
-
-    for(i = 77; i > 1; i--)
+    for(i = 60; i > 1; i--)
     {
         flag = 0;
-
         for(j = 77; j > 1; j--)
         {
             if(edge[i][j] == 3)
@@ -326,81 +326,51 @@ void Widget::doYourAIGO()
         }
     }
     edge[leftBeginX][leftBeginY] = 230;
-    int rightX = rightBeginX, rightY = rightBeginY;
-    int leftX = leftBeginX, leftY = leftBeginY;
+    edge[rightBeginX][rightBeginY] = 230;
 
-    // ------------------------------- Left链码 ---------------------------------------
-    int n = 0, last = 0, now = 0;
-    int find[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
-    while(n < 160)
-    {
-        for(i = 0; i < 8; i++)
-        {
-            now = last + i;
-
-            if(now < 0)
-                now += 8;
-            if(now > 7)
-                now -= 8;
-
-            if(edge[leftX+find[now][0]][leftY+find[now][1]] == 3)
-            {
-                leftX = leftX + find[now][0];
-                leftY = leftY + find[now][1];
-                edge[leftX][leftY] = 2;
-                break;
-            }
-        }
-        last = now - 2;
-        n++;
-    }
-    edge[leftX][leftY] = 250;
-
-    // ------------------------------- Right链码 ---------------------------------------
-    n = 0, last = 0, now = 0;
-    while(n < 160)
-    {
-        for(i = 0; i < 8; i++)
-        {
-            now = last + i;
-
-            if(now < 0)
-                now += 8;
-            if(now > 7)
-                now -= 8;
-            if(edge[rightX+find[now][0]][rightY+find[now][1]] == 3)
-            {
-                rightX = rightX + find[now][0];
-                rightY = rightY + find[now][1];
-                edge[rightX][rightY] = 2;
-                break;
-            }
-        }
-        last = now - 2;
-        n++;
-    }
-    edge[rightX][rightY] = 250;
-
-    //have: rightX rightY leftX leftY and their begin.
-    //set : sita step
-    //attention : start - end
     //--------------------------------  线路决策 ----------------------------------------
     //目前用按钮进行决策
-
-    //--------------------------------  姿态调整  ---------------------------------------
-    double tt = 0.0;
-    if(turn)
+    int freeManX = 0, freeManY = 0;
+    if(turn == 0)
     {
-        edge[rightX-1][rightY-1] = 250; edge[rightX-1][rightY+1] = 250;
-        edge[rightX+1][rightY-1] = 250; edge[rightX+1][rightY+1] = 250;
-        tt= atan((double)(rightY-40)/(double)(70-rightX))/3.1416*180;
+        freeManX = leftBeginX; freeManY = leftBeginY;
     }
     else
     {
-        edge[leftX-1][leftY-1] = 250; edge[leftX-1][leftY+1] = 250;
-        edge[leftX+1][leftY-1] = 250; edge[leftX+1][leftY+1] = 250;
-        tt= atan((double)(leftY-40)/(double)(70-leftX))/3.1416*180;
+        freeManX = rightBeginX; freeManY = rightBeginY;
     }
+
+    // ------------------------------ FreeMan链码 --------------------------------------
+    int n = 0, last = -2, current = 0;
+    int find[8][2] = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
+    while(n < 100)
+    {
+        for(i = 0; i < 8; i++)
+        {
+            current = last + i;
+            if(current < 0)
+                current += 8;
+            if(current > 7)
+                current -= 8;
+
+            if(edge[freeManX+find[current][0]][freeManY+find[current][1]] == 3)
+            {
+                freeManX = freeManX + find[current][0];
+                freeManY = freeManY + find[current][1];
+                edge[freeManX][freeManY] = 2;
+                break;
+            }
+        }
+        last = current - 2;
+        n++;
+    }
+    edge[freeManX][freeManY] = 250;
+    edge[freeManX-1][freeManY-1] = 250; edge[freeManX-1][freeManY+1] = 250;
+    edge[freeManX+1][freeManY-1] = 250; edge[freeManX+1][freeManY+1] = 250;
+
+    //--------------------------------  姿态调整  ---------------------------------------
+    double tt = 0.0;
+    tt= atan((double)(freeManY-40)/(double)(70-freeManX))/3.1416*180;
     if(runMode != 0)
     {       
         sita += tt;
