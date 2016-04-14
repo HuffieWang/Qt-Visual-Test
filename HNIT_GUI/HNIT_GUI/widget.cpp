@@ -4,30 +4,31 @@
 #include <QDebug>
 #include "math.h"
 
-static uchar runFlag, runMode;
+static char run_flag, run_mode;
 
-//attention: 十字路口链码起点有BUG
 //赛道变量
-#define RACE1
-static uchar race[800][800];
+#define RUNWAY1
+static char ranway[800][800];
+const int begin_x = 500, begin_y = 180;
 
-//运动变量
-//const int xBegin = 350, yBegin = 335;
-const int xBegin = 500, yBegin = 180;
-static int xBase, yBase;
-static double xFix, yFix;
-static double sita;
-static double step, vYaw;
-
-static int turn = 0;
+//控制变量
+typedef struct flyControl
+{
+    int turn_decision;
+    int base_x, base_y;
+    double fix_x, fix_y;
+    double speed;
+    double yaw_sita, yaw_offset;
+}flyCtrl;
+static flyCtrl control;
 
 //图片显示中间变量
-const unsigned int ovSize = 240;
-static unsigned int ovArea = ovSize * ovSize;
-static unsigned int *pImage = (unsigned int*)malloc(ovArea*sizeof(unsigned int));
+const unsigned int view_length = 240;
+static unsigned int view_size = view_length * view_length;
+static unsigned int *view = (unsigned int*)malloc(view_size*sizeof(unsigned int));
 
 //图片结果变量
- static uchar disData[80][80];
+static uchar image[80][80];
 
 Widget::Widget(QWidget *parent) :
     QWidget(parent),
@@ -35,41 +36,41 @@ Widget::Widget(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    uchar raceMode[80][80] = {0};
-    #ifdef RACE1
+    uchar ranway_model[80][80] = {0};
+    #ifdef RUNWAY1
     for (int i = 20; i < 60; ++i)
     {
-        raceMode[i][20] = 1;
-        raceMode[i][59] = 1;
-        raceMode[20][i] = 1;
-        raceMode[35][i] = 1;
-        raceMode[59][i] = 1;
+        ranway_model[i][20] = 1;
+        ranway_model[i][59] = 1;
+        ranway_model[20][i] = 1;
+        ranway_model[35][i] = 1;
+        ranway_model[59][i] = 1;
     }
     #endif
-    #ifdef RACE2
+    #ifdef RANWAY2
     for(int i = 0; i < 10; i++)
     {
-        raceMode[40-5][61-15+i] = 1;
-        raceMode[40+5][61-15+i] = 1;
-        raceMode[40-5-i][40-5] = 1;
-        raceMode[40-5-i][40+5] = 1;
-        raceMode[40+5+i][40-5] = 1;
-        raceMode[40+5+i][40+5] = 1;
+        ranway_model[40-5][61-15+i] = 1;
+        ranway_model[40+5][61-15+i] = 1;
+        ranway_model[40-5-i][40-5] = 1;
+        ranway_model[40-5-i][40+5] = 1;
+        ranway_model[40+5+i][40-5] = 1;
+        ranway_model[40+5+i][40+5] = 1;
     }
     for(int i = 0; i < 11; i++)
     {
-        raceMode[35+i][35] = 1;
-        raceMode[35+i][55] = 1;
-        raceMode[25][35+i] = 1;
-        raceMode[55][35+i] = 1;
+        ranway_model[35+i][35] = 1;
+        ranway_model[35+i][55] = 1;
+        ranway_model[25][35+i] = 1;
+        ranway_model[55][35+i] = 1;
     }
     #endif
     for(int i = 10; i < 70; i++)
     {
-        raceMode[i][10] = 1;
-        raceMode[i][69] = 1;
-        raceMode[10][i] = 1;
-        raceMode[69][i] = 1;
+        ranway_model[i][10] = 1;
+        ranway_model[i][69] = 1;
+        ranway_model[10][i] = 1;
+        ranway_model[69][i] = 1;
     }
 
     //生成赛道
@@ -81,7 +82,7 @@ Widget::Widget(QWidget *parent) :
             {
                 for(int l = j*10; l < (j+1)*10; l++)
                 {
-                    race[k][l] = raceMode[i][j];
+                    ranway[k][l] = ranway_model[i][j];
                 }
             }
         }
@@ -111,13 +112,13 @@ Widget::~Widget()
 }
 
 //启动：正常运行
-//停止：“base坐标”回到原点，“绝对方向sita” 归零，“速度step”归零
+//停止：“base坐标”回到原点，“绝对方向yaw_sita” 归零，“速度speed”归零
 void Widget::on_pushButton_clicked()
 {
-    xBase = xBegin; yBase = yBegin;
-    if(runFlag == 0)
+    control.base_x = begin_x; control.base_y = begin_y;
+    if(run_flag == 0)
     {
-        runFlag = 1;
+        run_flag = 1;
         ui->pushButton->setText("停止");
         if(ui->comboBox->currentIndex() != 2 )
         {
@@ -138,22 +139,21 @@ void Widget::on_pushButton_clicked()
         }
 
         if(ui->comboBox->currentIndex() != 0 )
-            runMode = 1;
+            run_mode = 1;
         else
-            runMode = 0;
+            run_mode = 0;
 
         ui->comboBox->setDisabled(true);
         timer->start(200);
     }
     else
     {
-        runFlag = 0;
+        run_flag = 0;
         timer->stop();
         ui->label->clear();
-        sita = 0.00;
-        step = 0.00;
-        xFix = 0.00; yFix = 0.00;
-        turn = 0;
+
+        memset(&control, 0 ,sizeof(control));
+
         ui->pushButton->setText("启动");
         ui->pushButton_UP->setEnabled(false);
         ui->pushButton_DN->setEnabled(false);
@@ -168,40 +168,40 @@ void Widget::on_pushButton_clicked()
     }
 }
 
-//加速：增大“速度step”
+//加速：增大“速度speed”
 void Widget::on_pushButton_UP_clicked()
 {
-    if(step < 50)
+    if(control.speed < 50)
     {
-        step+=2;
-        QString s = QString::number(step);
+        control.speed+=2;
+        QString s = QString::number(control.speed);
         ui->vEdit->setText(s);
     }
 }
 
-//减速：减小“速度step”
+//减速：减小“速度speed”
 void Widget::on_pushButton_DN_clicked()
 {
-    if(step >= 2)
+    if(control.speed >= 2)
     {
-        step-=2;
-        QString s = QString::number(step);
+        control.speed-=2;
+        QString s = QString::number(control.speed);
         ui->vEdit->setText(s);
     }
 }
 
-//左转：减小“绝对方向sita”
+//左转：减小“绝对方向yaw_sita”
 void Widget::on_pushButton_R_clicked()
 {
-    vYaw = ui->wEdit->text().toDouble();
-    sita -= vYaw;
+    control.yaw_offset = ui->wEdit->text().toDouble();
+    control.yaw_sita -= control.yaw_offset;
 }
 
-//右转：增大“绝对方向sita”
+//右转：增大“绝对方向yaw_sita”
 void Widget::on_pushButton_L_clicked()
 {
-    vYaw = ui->wEdit->text().toDouble();
-    sita += vYaw;
+    control.yaw_offset = ui->wEdit->text().toDouble();
+    control.yaw_sita += control.yaw_offset;
 }
 
 //正常运行：每0.1s动作一次
@@ -213,39 +213,37 @@ void Widget::updateNomal()
     disImage();
 }
 
-//获取图像：二值、80*80的disData
+//获取图像：二值、80*80的image
 void Widget::getImage()
 {
-    uchar tempData[180][180] = {0};
-    uchar imgData[80][80] = {0};
-    double sinSita = 0.00, cosSita = 0.00;
+    uchar image_temp[180][180] = {0};
+    uchar image_rotated[80][80] = {0};
+
+    double sin_sita = sin(3.1416 * control.yaw_sita / 180.00);
+    double cos_sita = cos(3.1416 * control.yaw_sita / 180.00);
+
     double xt = 0, yt = 0;
-    int xi = 0, yi = 0;
-
-    sinSita = sin(3.1416 * sita / 180.00);
-    cosSita = cos(3.1416 * sita / 180.00);
-
-    //所在120*120地面旋转Sita度，即为实际图像
+    //所在120*120地面旋转yaw_sita度，即为实际图像
     for(int i = 0; i < 120; i++)
     {
         for(int j = 0; j < 120; j++)
         {
             //旋转公式
-            xt = ( (i - 60) * cosSita - (j - 60) * sinSita );
-            yt = ( (i - 60) * sinSita + (j - 60) * cosSita );
+            xt = ( (i - 60) * cos_sita - (j - 60) * sin_sita );
+            yt = ( (i - 60) * sin_sita + (j - 60) * cos_sita );
 
             //结果四舍五入
             if(xt >= 0)
-                xi = (int)(xt + 0.5);
+                xt += 0.5;
             else
-                xi = (int)(xt - 0.5);
+                xt -= 0.5;
             if(yt >= 0)
-                yi = (int)(yt + 0.5);
+                yt += 0.5;
             else
-                yi = (int)(yt - 0.5);
+                yt -= 0.5;
 
-            //tempData中心坐标修正90, race修正40
-            tempData[xi + 90][yi + 90] = race[i+xBase-40][j+yBase-40];
+            //image_temp中心坐标修正90, ranway修正40
+            image_temp[(int)xt + 90][(int)yt + 90] = ranway[i+control.base_x-40][j+control.base_y-40];
         }
     }
 
@@ -254,8 +252,8 @@ void Widget::getImage()
     {
         for(int j = 0; j < 80; j++)
         {
-            disData[i][j] = 0;
-            imgData[i][j] = tempData[i+50][j+50];
+            image[i][j] = 0;
+            image_rotated[i][j] = image_temp[i+50][j+50];
         }
     }
 
@@ -264,18 +262,18 @@ void Widget::getImage()
     {
         for(int j = 1; j < 79; j++)
         {
-            disData[i][j] = 0;
-            if(imgData[i-1][j-1] || imgData[i-1][j] || imgData[i-1][j+1] ||
-               imgData[i][j-1]   || imgData[i][j]   || imgData[i][j+1]   ||
-               imgData[i+1][j-1] || imgData[i+1][j] || imgData[i+1][j+1]  )
+            image[i][j] = 0;
+            if(image_rotated[i-1][j-1] || image_rotated[i-1][j] || image_rotated[i-1][j+1] ||
+               image_rotated[i][j-1]   || image_rotated[i][j]   || image_rotated[i][j+1]   ||
+               image_rotated[i+1][j-1] || image_rotated[i+1][j] || image_rotated[i+1][j+1]  )
             {
-                disData[i][j] = 1;
+                image[i][j] = 1;
             }
         }
     }
 }
 
-//自定义循迹算法：disData->循迹算法->更新“绝对方向sita”和“速度step”
+//自定义循迹算法：image->循迹算法->更新“绝对方向yaw_sita”和“速度speed”
 void Widget::doYourAIGO()
 {
     int i = 0, j = 0;
@@ -286,8 +284,8 @@ void Widget::doYourAIGO()
     {
         for(j = 2; j < 78; j++)
         {
-            if(disData[i][j] != disData[i][j+1] ||
-               disData[i][j] != disData[i+1][j])
+            if(image[i][j] != image[i][j+1] ||
+               image[i][j] != image[i+1][j])
             {
                 edge[i][j] = 3;
             }
@@ -295,17 +293,17 @@ void Widget::doYourAIGO()
     }
 
     // ------------------------------ 寻找链码起点 --------------------------------------
-    int flag = 0;
-    int leftBeginX = 40, leftBeginY = 40, rightBeginX = 40, rightBeginY = 40;
+    int begin_count = 0;
+    int left_begin_x = 40, left_begin_y = 40, right_begin_x = 40, right_begin_y = 40;
     for(i = 60; i > 1; i--)
     {
-        flag = 0;
+        begin_count = 0;
         for(j = 77; j > 1; j--)
         {
             if(edge[i][j] == 3)
             {
-                flag++;
-                rightBeginY = j;
+                begin_count++;
+                right_begin_y = j;
                 break;
             }
         }
@@ -313,31 +311,31 @@ void Widget::doYourAIGO()
         {
             if(edge[i][j] == 3)
             {
-                flag++;
-                leftBeginY = j;
+                begin_count++;
+                left_begin_y = j;
                 break;
             }
         }
-        if(flag == 2 && (rightBeginY-leftBeginY) > 4)
+        if(begin_count == 2 && (right_begin_y-left_begin_y) > 4)
         {
-            leftBeginX = i;
-            rightBeginX = i;
+            left_begin_x = i;
+            right_begin_x = i;
             break;
         }
     }
-    edge[leftBeginX][leftBeginY] = 230;
-    edge[rightBeginX][rightBeginY] = 230;
+    edge[left_begin_x][left_begin_y] = 230;
+    edge[right_begin_x][right_begin_y] = 230;
 
     //--------------------------------  线路决策 ----------------------------------------
     //目前用按钮进行决策
-    int freeManX = 0, freeManY = 0;
-    if(turn == 0)
+    int freeman_x = 0, freeman_y = 0;
+    if(control.turn_decision == 0)
     {
-        freeManX = leftBeginX; freeManY = leftBeginY;
+        freeman_x = left_begin_x; freeman_y = left_begin_y;
     }
     else
     {
-        freeManX = rightBeginX; freeManY = rightBeginY;
+        freeman_x = right_begin_x; freeman_y = right_begin_y;
     }
 
     // ------------------------------ FreeMan链码 --------------------------------------
@@ -353,28 +351,27 @@ void Widget::doYourAIGO()
             if(current > 7)
                 current -= 8;
 
-            if(edge[freeManX+find[current][0]][freeManY+find[current][1]] == 3)
+            if(edge[freeman_x+find[current][0]][freeman_y+find[current][1]] == 3)
             {
-                freeManX = freeManX + find[current][0];
-                freeManY = freeManY + find[current][1];
-                edge[freeManX][freeManY] = 2;
+                freeman_x = freeman_x + find[current][0];
+                freeman_y = freeman_y + find[current][1];
+                edge[freeman_x][freeman_y] = 2;
                 break;
             }
         }
         last = current - 2;
         n++;
     }
-    edge[freeManX][freeManY] = 250;
-    edge[freeManX-1][freeManY-1] = 250; edge[freeManX-1][freeManY+1] = 250;
-    edge[freeManX+1][freeManY-1] = 250; edge[freeManX+1][freeManY+1] = 250;
+    edge[freeman_x][freeman_y] = 250;
+    edge[freeman_x-1][freeman_y-1] = 250; edge[freeman_x-1][freeman_y+1] = 250;
+    edge[freeman_x+1][freeman_y-1] = 250; edge[freeman_x+1][freeman_y+1] = 250;
 
     //--------------------------------  姿态调整  ---------------------------------------
-    double tt = 0.0;
-    tt= atan((double)(freeManY-40)/(double)(70-freeManX))/3.1416*180;
-    if(runMode != 0)
+    if(run_mode != 0)
     {       
-        sita += tt;
-        ui->wEdit->setText(QString::number(tt, 10, 1));
+        control.yaw_offset = atan((double)(freeman_y-40)/(double)(70-freeman_x))/3.1416*180;
+        control.yaw_sita += control.yaw_offset;
+        ui->wEdit->setText(QString::number(control.yaw_offset, 10, 1));
     }
 
     //------------------------------  图像信息加注  ---------------------------------------
@@ -383,59 +380,58 @@ void Widget::doYourAIGO()
         for(j = 0; j < 80; j++)
         {
             if(edge[i][j] != 0)
-                disData[i][j] = edge[i][j];
+                image[i][j] = edge[i][j];
         }
     }
 }
 
-//正常飞行：从 “base坐标” 向 “sita角度” 飞行 “step距离”
+//正常飞行：从 “base坐标” 向 “yaw_sita角度” 飞行 “speed距离”
 void Widget::goNomal()
 {
     int temp = 0;
-    double ans = 0.00;
-    double sinSita = 0.00, cosSita = 0.00;
-    sinSita = sin(3.1416 * sita / 180.00);
-    cosSita = cos(3.1416 * sita / 180.00);
+    double step = 0.00;
+    double sin_sita = sin(3.1416 * control.yaw_sita / 180.00);
+    double cos_sita = cos(3.1416 * control.yaw_sita / 180.00);
 
-    step = ui->vEdit->text().toInt();
+    control.speed = ui->vEdit->text().toInt();
 
-    if(sita >= 360)
+    if(control.yaw_sita >= 360)
     {
-        sita -= 360;
+        control.yaw_sita -= 360;
     }
-    else if(sita < 0)
+    else if(control.yaw_sita < 0)
     {
-        sita += 360;
+        control.yaw_sita += 360;
     }
-    ui->sEdit->setText(QString::number(sita, 10, 1));
+    ui->sEdit->setText(QString::number(control.yaw_sita, 10, 1));
 
-    ans = cosSita*step + xFix;
-    temp = (int)(ans);
+    step = cos_sita*control.speed + control.fix_x;
+    temp = (int)(step);
     if(temp >= 0)
         temp += 0.5;
     else
         temp -= 0.5;
-    if(xBase-temp > 100 && xBase-temp < 700)
+    if(control.base_x-temp > 100 && control.base_x-temp < 700)
     {
-        xBase -= temp;
-        xFix = ans - (double)temp;
+        control.base_x -= temp;
+        control.fix_x = step - (double)temp;
     }
 
-    ans = sinSita*step + yFix;
-    temp = (int)(ans);
+    step = sin_sita*control.speed + control.fix_y;
+    temp = (int)(step);
     if(temp >= 0)
         temp += 0.5;
     else
         temp -= 0.5;
 
-    if(yBase+temp > 100 && yBase+temp < 700)
+    if(control.base_y+temp > 100 && control.base_y+temp < 700)
     {
-        yBase += temp;
-        yFix = ans - (double)temp;
+        control.base_y += temp;
+        control.fix_y = step - (double)temp;
     }
 }
 
-//显示图像：disData
+//显示图像：image
 void Widget::disImage()
 {
     //图像显示
@@ -447,24 +443,24 @@ void Widget::disImage()
         {
             for (int j = 0; j < 80; ++j)
             {
-                pa = (uchar *)(pImage+n);
-                pb = (uchar *)(pImage+n+1);
-                pc = (uchar *)(pImage+n+2);
+                pa = (uchar *)(view+n);
+                pb = (uchar *)(view+n+1);
+                pc = (uchar *)(view+n+2);
 
-                pImage[n] = 0;pImage[n+1] = 0;pImage[n+2] = 0;
-                if(disData[i][j] == 1)
+                view[n] = 0;view[n+1] = 0;view[n+2] = 0;
+                if(image[i][j] == 1)
                 {
                     pa[0] = 255; pa[1] = 255; pa[2] = 255;
                     pb[0] = 255; pb[1] = 255; pb[2] = 255;
                     pc[0] = 255; pc[1] = 255; pc[2] = 255;
                 }
-                else if(disData[i][j] == 2)
+                else if(image[i][j] == 2)
                 {
                     pa[0] = 0; pa[1] = 255; pa[2] = 0;
                     pb[0] = 0; pb[1] = 255; pb[2] = 0;
                     pc[0] = 0; pc[1] = 255; pc[2] = 0;
                 }
-                else if(disData[i][j] == 3)
+                else if(image[i][j] == 3)
                 {
                     pa[0] = 0; pa[1] = 255; pa[2] = 255;
                     pb[0] = 0; pb[1] = 255; pb[2] = 255;
@@ -472,31 +468,31 @@ void Widget::disImage()
                 }
                 else
                 {
-                    pa[0] = 0; pa[1] = 0; pa[2] = disData[i][j];
-                    pb[0] = 0; pb[1] = 0; pb[2] = disData[i][j];
-                    pc[0] = 0; pc[1] = 0; pc[2] = disData[i][j];
+                    pa[0] = 0; pa[1] = 0; pa[2] = image[i][j];
+                    pb[0] = 0; pb[1] = 0; pb[2] = image[i][j];
+                    pc[0] = 0; pc[1] = 0; pc[2] = image[i][j];
                 }
                 n+=3;   
             }
         }
     }
 
-    QByteArray imageByteArray = QByteArray( (const char*)pImage,  ovArea*4 );
-    uchar*  transData = (uchar*)imageByteArray.data();
-    QImage image = QImage(transData, ovSize, ovSize, QImage::Format_RGB32);
-    ui->label->setPixmap(QPixmap::fromImage(image));
+    QByteArray image_space = QByteArray( (const char*)view,  view_size*4 );
+    uchar*  temp_space = (uchar*)image_space.data();
+    QImage my_image = QImage(temp_space, view_length, view_length, QImage::Format_RGB32);
+    ui->label->setPixmap(QPixmap::fromImage(my_image));
 }
 
 void Widget::on_pushButton_EL_clicked()
 {
-    turn = 0;
+    control.turn_decision = 0;
     ui->pushButton_EL->setEnabled(false);
     ui->pushButton_ER->setEnabled(true);
 }
 
 void Widget::on_pushButton_ER_clicked()
 {
-    turn = 1;
+    control.turn_decision = 1;
     ui->pushButton_EL->setEnabled(true);
     ui->pushButton_ER->setEnabled(false);
 }
